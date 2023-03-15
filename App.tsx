@@ -4,7 +4,6 @@ import { Camera } from "expo-camera";
 import * as tf from "@tensorflow/tfjs";
 import { cameraWithTensors } from "@tensorflow/tfjs-react-native";
 import React, { useEffect, useRef, useState } from "react";
-
 import * as handpose from "@tensorflow-models/handpose";
 
 const TensorCamera = cameraWithTensors(Camera);
@@ -14,66 +13,16 @@ LogBox.ignoreAllLogs(true);
 const { width, height } = Dimensions.get("window");
 
 const MODEL_CONFIG = {
-  flipHorizontal: true, // flip e.g for video
+  detectionConfidence: 0.8, // 
+  maxContinuousChecks: 10, // how many frames to go without running the bounding box detector
   maxNumBoxes: 20, // maximum number of boxes to detect
   iouThreshold: 0.5, // ioU threshold for non-max suppression
-  scoreThreshold: 0.8, // confidence threshold for predictions.
+  scoreThreshold: 0.5, // confidence threshold for predictions.
 };
 
 const RESIZE_WIDTH = 128;
 const RESIZE_HEIGHT = Math.round((height / width) * RESIZE_WIDTH);
 const FPS = 5; // set desired FPS for predictions
-
-export default function App() {
-  const [model, setModel] = useState<handpose.HandPose | null>(null);
-  let context = useRef<CanvasRenderingContext2D>();
-  let canvas = useRef<Canvas>();
-  const [isModelReady, setIsModelReady] = useState(false);
-
-  function handleCameraStream(images: any) {
-    const loop = async () => {
-      if (!isModelReady) {
-        setTimeout(loop, 1000 / FPS);
-        return;
-      }
-
-      const nextImageTensor = images.next().value;
-
-      if (!model || !nextImageTensor) throw new Error("no model");
-
-      model
-        .estimateHands(nextImageTensor)
-        .then((predictions) => {
-          drawRectangle(predictions, nextImageTensor);
-        })
-        .catch((err) => {
-          console.log(err);
-        });
-
-      setTimeout(loop, 1000 / FPS); // debounce the loop to limit FPS
-    };
-    loop();
-  }
-
-  function drawKeypoints(keypoints, ctx) {
-    keypoints.forEach((keypoint) => {
-      ctx.beginPath();
-      ctx.arc(keypoint[0], keypoint[1], 5, 0, 2 * Math.PI);
-      ctx.fillStyle = "red";
-      ctx.fill();
-    });
-  }
-
-  function drawConnections(pairs, ctx) {
-    ctx.beginPath();
-    ctx.strokeStyle = "blue";
-    ctx.lineWidth = 2;
-    pairs.forEach(([start, end]) => {
-      ctx.moveTo(start[0], start[1]);
-      ctx.lineTo(end[0], end[1]);
-    });
-    ctx.stroke();
-  }
 
   // Hand part connections
   const HAND_CONNECTIONS = [
@@ -99,7 +48,59 @@ export default function App() {
     [19, 20], // Pinky
   ];
 
-  function drawRectangle(
+export default function App() {
+  const [model, setModel] = useState<handpose.HandPose | null>(null);
+  let context = useRef<CanvasRenderingContext2D>();
+  let canvas = useRef<Canvas>();
+  const [isModelReady, setIsModelReady] = useState(false);
+
+  function handleCameraStream(images: any) {
+    const loop = async () => {
+      if (!isModelReady) {
+        setTimeout(loop, 1000 / FPS);
+        return;
+      }
+
+      const nextImageTensor = images.next().value;
+
+      if (!model || !nextImageTensor) throw new Error("no model");
+
+      model
+        .estimateHands(nextImageTensor)
+        .then((predictions) => {
+          mapPoints(predictions, nextImageTensor);
+        })
+        .catch((err) => {
+          console.log(err);
+        });
+
+      setTimeout(loop, 1000 / FPS); // debounce the loop to limit FPS
+    };
+    loop();
+  }
+
+  function drawKeypoints(keypoints: any[][], ctx: CanvasRenderingContext2D) {
+    keypoints.forEach((keypoint: any[]) => {
+      ctx.beginPath();
+      ctx.arc(keypoint[0], keypoint[1], 5, 0, 2 * Math.PI);
+      ctx.fillStyle = "red";
+      ctx.fill();
+    });
+  }
+
+  function drawConnections(pairs: number[][][] | [any, any][], ctx: CanvasRenderingContext2D) {
+    ctx.beginPath();
+    ctx.strokeStyle = "blue";
+    ctx.lineWidth = 2;
+    pairs.forEach(([start, end]) => {
+      ctx.moveTo(start[0], start[1]);
+      ctx.lineTo(end[0], end[1]);
+    });
+    ctx.stroke();
+  }
+
+
+  function mapPoints(
     predictions: handpose.AnnotatedPrediction[],
     nextImageTensor: any
   ) {
@@ -107,16 +108,16 @@ export default function App() {
       console.log("no context or canvas");
       return;
     }
-
+  
     // to match the size of the camera preview
     const scaleWidth = width / nextImageTensor.shape[1];
     const scaleHeight = height / nextImageTensor.shape[0];
-
-    const flipHorizontal = Platform.OS === "ios" ? false : true;
-
+  
+    const flipHorizontal = true;
+  
     // We will clear the previous prediction
     context.current.clearRect(0, 0, width, height);
-
+  
     // Draw the keypoints and connections for each hand prediction
     for (const prediction of predictions) {
       const keypoints = prediction.landmarks.map((landmark) => {
@@ -126,7 +127,7 @@ export default function App() {
         const y = landmark[1] * scaleHeight;
         return [x, y];
       });
-
+  
       drawKeypoints(keypoints, context.current);
       drawConnections(
         HAND_CONNECTIONS.map(([startIdx, endIdx]) => [
@@ -137,7 +138,7 @@ export default function App() {
       );
     }
   }
-
+  
   const handleCanvas = async (can: Canvas) => {
     if (can) {
       can.width = width;
