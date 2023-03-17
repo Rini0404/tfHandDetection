@@ -13,42 +13,46 @@ LogBox.ignoreAllLogs(true);
 const { width, height } = Dimensions.get("window");
 
 const MODEL_CONFIG = {
-  detectionConfidence: 0.8, // 
-  maxContinuousChecks: 10, // how many frames to go without running the bounding box detector
-  maxNumBoxes: 20, // maximum number of boxes to detect
-  iouThreshold: 0.5, // ioU threshold for non-max suppression
-  scoreThreshold: 0.5, // confidence threshold for predictions.
+  detectionConfidence: 0.8,
+  maxContinuousChecks: 10,
+  maxNumBoxes: 20, // maximum boxes to detect
+  iouThreshold: 0.5, // ioU thresho non-max suppression
+  scoreThreshold: 0.8, // confidence
 };
 
-const RESIZE_WIDTH = 128;
-const RESIZE_HEIGHT = Math.round((height / width) * RESIZE_WIDTH);
-const FPS = 5; // set desired FPS for predictions
+// start
 
-  // Hand part connections
-  const HAND_CONNECTIONS = [
-    [0, 1],
-    [1, 2],
-    [2, 3],
-    [3, 4], // Thumb
-    [0, 5],
-    [5, 6],
-    [6, 7],
-    [7, 8], // Index
-    [0, 9],
-    [9, 10],
-    [10, 11],
-    [11, 12], // Middle
-    [0, 13],
-    [13, 14],
-    [14, 15],
-    [15, 16], // Ring
-    [0, 17],
-    [17, 18],
-    [18, 19],
-    [19, 20], // Pinky
-  ];
+const RESIZE_WIDTH = 224;
+const RESIZE_HEIGHT = Math.round((height / width) * RESIZE_WIDTH);
+
+const FPS = 15; // set desired FPS for predictions
+
+// Hand part connections
+const HAND_CONNECTIONS = [
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 4], // Thumb
+  [0, 5],
+  [5, 6],
+  [6, 7],
+  [7, 8], // Index
+  [0, 9],
+  [9, 10],
+  [10, 11],
+  [11, 12], // Middle
+  [0, 13],
+  [13, 14],
+  [14, 15],
+  [15, 16], // Ring
+  [0, 17],
+  [17, 18],
+  [18, 19],
+  [19, 20], // Pinky
+];
 
 export default function App() {
+  
   const [model, setModel] = useState<handpose.HandPose | null>(null);
   let context = useRef<CanvasRenderingContext2D>();
   let canvas = useRef<Canvas>();
@@ -69,13 +73,14 @@ export default function App() {
         .estimateHands(nextImageTensor)
         .then((predictions) => {
           mapPoints(predictions, nextImageTensor);
+          tf.dispose(nextImageTensor);
         })
         .catch((err) => {
           console.log(err);
         });
 
-      setTimeout(loop, 1000 / FPS); // debounce the loop to limit FPS
-    };
+        setTimeout(loop, 1000 / FPS);
+      };
     loop();
   }
 
@@ -88,7 +93,10 @@ export default function App() {
     });
   }
 
-  function drawConnections(pairs: number[][][] | [any, any][], ctx: CanvasRenderingContext2D) {
+  function drawConnections(
+    pairs: number[][][] | [any, any][],
+    ctx: CanvasRenderingContext2D
+  ) {
     ctx.beginPath();
     ctx.strokeStyle = "blue";
     ctx.lineWidth = 2;
@@ -99,7 +107,6 @@ export default function App() {
     ctx.stroke();
   }
 
-
   function mapPoints(
     predictions: handpose.AnnotatedPrediction[],
     nextImageTensor: any
@@ -108,16 +115,16 @@ export default function App() {
       console.log("no context or canvas");
       return;
     }
-  
+
     // to match the size of the camera preview
     const scaleWidth = width / nextImageTensor.shape[1];
     const scaleHeight = height / nextImageTensor.shape[0];
-  
+
     const flipHorizontal = true;
-  
+
     // We will clear the previous prediction
     context.current.clearRect(0, 0, width, height);
-  
+
     // Draw the keypoints and connections for each hand prediction
     for (const prediction of predictions) {
       const keypoints = prediction.landmarks.map((landmark) => {
@@ -127,7 +134,7 @@ export default function App() {
         const y = landmark[1] * scaleHeight;
         return [x, y];
       });
-  
+
       drawKeypoints(keypoints, context.current);
       drawConnections(
         HAND_CONNECTIONS.map(([startIdx, endIdx]) => [
@@ -138,7 +145,7 @@ export default function App() {
       );
     }
   }
-  
+
   const handleCanvas = async (can: Canvas) => {
     if (can) {
       can.width = width;
