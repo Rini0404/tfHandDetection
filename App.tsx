@@ -1,10 +1,15 @@
-import { Dimensions, LogBox, Platform, StyleSheet } from "react-native";
+import { Dimensions, LogBox, Platform, StyleSheet, Text } from "react-native";
 import Canvas from "react-native-canvas";
 import { Camera } from "expo-camera";
 import * as tf from "@tensorflow/tfjs";
 import { cameraWithTensors } from "@tensorflow/tfjs-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import * as handpose from "@tensorflow-models/handpose";
+import { requestCameraPermissions } from "./src/utils/CameraUtils";
+import { HAND_CONNECTIONS } from "./src/config/TfHandPoints";
+import { FPS, RESIZE_HEIGHT, RESIZE_WIDTH } from "./src/config/Constants";
+import { loadModel } from "./src/utils/TensorFlowLoader";
+import LoadingModel from "./src/component/LoadingModel";
 
 const TensorCamera = cameraWithTensors(Camera);
 
@@ -12,59 +17,31 @@ LogBox.ignoreAllLogs(true);
 
 const { width, height } = Dimensions.get("window");
 
-const MODEL_CONFIG = {
-  detectionConfidence: 0.8,
-  maxContinuousChecks: 10,
-  maxNumBoxes: 20, // maximum boxes to detect
-  iouThreshold: 0.5, // ioU thresho non-max suppression
-  scoreThreshold: 0.8, // confidence
-};
-
-// start
-
-const RESIZE_WIDTH = 224;
-const RESIZE_HEIGHT = Math.round((height / width) * RESIZE_WIDTH);
-
-const FPS = 15; // set desired FPS for predictions
-
-// Hand part connections
-const HAND_CONNECTIONS = [
-  [0, 1],
-  [1, 2],
-  [2, 3],
-  [3, 4], // Thumb
-  [0, 5],
-  [5, 6],
-  [6, 7],
-  [7, 8], // Index
-  [0, 9],
-  [9, 10],
-  [10, 11],
-  [11, 12], // Middle
-  [0, 13],
-  [13, 14],
-  [14, 15],
-  [15, 16], // Ring
-  [0, 17],
-  [17, 18],
-  [18, 19],
-  [19, 20], // Pinky
-];
-
 export default function App() {
-  
-  const [model, setModel] = useState<handpose.HandPose | null>(null);
+  const [model, setModel] = useState(null);
+  const [isModelReady, setIsModelReady] = useState(false);
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
   let context = useRef<CanvasRenderingContext2D>();
   let canvas = useRef<Canvas>();
-  const [isModelReady, setIsModelReady] = useState(false);
+
+  useEffect(() => {
+    // Separating camera permission request
+    (async () => {
+      await requestCameraPermissions(setPermissionsGranted);
+    })();
+  }, []);
+
+  useEffect(() => {
+    // Separating model loading
+    if (permissionsGranted) {
+      (async () => {
+        await loadModel(setModel, setIsModelReady);
+      })();
+    }
+  }, [permissionsGranted]);
 
   function handleCameraStream(images: any) {
     const loop = async () => {
-      if (!isModelReady) {
-        setTimeout(loop, 1000 / FPS);
-        return;
-      }
-
       const nextImageTensor = images.next().value;
 
       if (!model || !nextImageTensor) throw new Error("no model");
@@ -79,8 +56,8 @@ export default function App() {
           console.log(err);
         });
 
-        setTimeout(loop, 1000 / FPS);
-      };
+      setTimeout(loop, 1000 / FPS);
+    };
     loop();
   }
 
@@ -164,26 +141,10 @@ export default function App() {
     ? (textureDims = { height: 1920, width: 1080 })
     : (textureDims = { height: 1200, width: 1600 });
 
-  useEffect(() => {
-    (async () => {
-      const { status } = await Camera.requestCameraPermissionsAsync();
-      if (status !== "granted") {
-        alert("Sorry, we need camera roll permissions to make this work!");
-      }
-
-      await tf.ready();
-      const loadedModel = await handpose.load(MODEL_CONFIG);
-      setModel(loadedModel);
-      setIsModelReady(true);
-    })();
-  }, []);
-
-  return (
+  return isModelReady ? (
     <>
       <TensorCamera
-        // Standard Camera props
         style={styles.camera}
-        type={Camera.Constants.Type.back}
         // Tensor related props
         cameraTextureHeight={textureDims.height}
         cameraTextureWidth={textureDims.width}
@@ -197,6 +158,8 @@ export default function App() {
 
       <Canvas style={styles.canvas} ref={handleCanvas} />
     </>
+  ) : (
+      <LoadingModel />
   );
 }
 
@@ -212,7 +175,7 @@ const styles = StyleSheet.create({
   canvas: {
     position: "absolute",
     zIndex: 1000000,
-    width: "100%",
-    height: "100%",
+    width: width, // Use the numeric value directly
+    height: height, // Use the numeric value directly
   },
 });
